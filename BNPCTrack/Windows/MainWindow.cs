@@ -55,14 +55,12 @@ public class MainWindow : Window, IDisposable
     {
         var targetObject = Plugin.CurrentTarget;
 
-        long lastSampleAgo = -1;
-        if(targetObject != null && Plugin.LastSampleTimes.Count() > 0)
-            lastSampleAgo = Environment.TickCount64 - Plugin.LastSampleTimes.Last();
-        float sps = Plugin.LastSampleTimes.Count;
+        long lastSampleAgo = Plugin.SampleTracker.GetLastSampleAgoMs();
+        bool triggered = lastSampleAgo == 0;
 
         ImGui.Text($"Last Sample: {lastSampleAgo} ms");
         ImGui.SameLine(400f);
-        ImGui.Text($"Samples/s: {sps:0.##}");
+        ImGui.Text($"Samples/s: {Plugin.SampleTracker.GetSPS():0.##}");
         ImGui.SameLine(200f);
         ImGui.Text($"BNPCs: {Plugin.BNPCCount}");
 
@@ -80,29 +78,13 @@ public class MainWindow : Window, IDisposable
 
             ImGui.EndCombo();
         }
+        ImGui.NewLine();
 
-        ImGui.Text($"Sampling Timeline (last {BNPCTrackPlugin.TimelineWindowMs}ms)");
-
-        ImGui.BeginChild("timeline", new System.Numerics.Vector2(0, 30), false);
-
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0, 0));
-        for (int i = 0; i < BNPCTrackPlugin.BinCount; i++)
-        {
-            bool triggered = Plugin.TriggerBins[i];
-
-            var color = triggered
-                ? new Vector4(0f, 1f, 0f, 1f)       // green = sampled
-                : new Vector4(0.2f, 0.2f, 0.2f, 1f); // gray = no sample
-            ImGui.SameLine();
-            ImGui.TextColored(color, "■");
-        }
-        ImGui.PopStyleVar();
-
-        ImGui.EndChild();
+        Plugin.SampleTracker.DrawTimelineUI();
 
         if(targetObject != null)
         {
-            var recColor = lastSampleAgo == 0 ? new Vector4(1f, 0f, 0f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
+            var recColor = triggered ? new Vector4(1f, 0f, 0f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
             ImGui.TextColored(recColor, "●");
             ImGui.SameLine(24);
             ImGui.TextUnformatted("Currently capturing " + targetObject.Name);
@@ -140,6 +122,7 @@ public class MainWindow : Window, IDisposable
                 && Plugin.RDPSimplifiedResult != null && Plugin.RDPSimplifiedResult.Points.Count > 1)
             {
                 ImGui.TextUnformatted("Loops: " + Plugin.RDPSimplifiedResult.IsLoop.ToString());
+                ImGui.SameLine(100f);
                 ImGui.TextUnformatted("Reverse: " + Plugin.RDPSimplifiedResult.IsReverse.ToString());
 
                 var entries = Plugin.SnapshotData.Entries;

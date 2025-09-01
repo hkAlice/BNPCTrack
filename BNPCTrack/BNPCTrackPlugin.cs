@@ -47,15 +47,8 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
     public RDPResult RDPSimplifiedResult { get; set; }
     public long SamplingIntervalMs { get; set; }
     public long BNPCCount { get; set; }
-    private const int BinSizeMs = 100;
-    public const int TimelineWindowMs = 5000;
-    public const int BinCount = TimelineWindowMs / BinSizeMs;
-
-    public bool[] TriggerBins = new bool[BinCount];
-    private long timelineStartMs = Environment.TickCount64;
-    public float SamplesPerSecond { get; set; }
-    public readonly Queue<long> LastSampleTimes = new Queue<long>();
-    private const int SPSWindowMs = 1000;
+    
+    public SampleTracker SampleTracker = new SampleTracker();
 
     public BNPCTrackPlugin()
     {
@@ -179,57 +172,37 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
 
     private unsafe void Update(IFramework framework)
     {
-        // todo: change this to a select from objecttable
-        // foreach (var o in ObjectTable.Where(o => o is { ObjectKind: (Dalamud.Game.ClientState.Objects.Enums.ObjectKind)ObjectKind.BattleNpc }))
         CurrentTarget = BNPCTrackPlugin.TargetManager.FocusTarget;
 
-        long now = Environment.TickCount64;
         BNPCCount = ObjectTable.Where(o => o is { ObjectKind: (Dalamud.Game.ClientState.Objects.Enums.ObjectKind)ObjectKind.BattleNpc }).Count();
-
-        // todo: shove this sample timeline stuff into another func please
-        long elapsed = now - timelineStartMs;
-        if(elapsed >= TimelineWindowMs)
-        {
-            int cycles = (int)(elapsed / BinSizeMs);
-            cycles = Math.Min(cycles, BinCount);
-            Array.Clear(TriggerBins, 0, cycles);
-            timelineStartMs += cycles * BinSizeMs;
-        }
-
-        while(LastSampleTimes.Count > 0 && now - LastSampleTimes.Peek() > SPSWindowMs)
-            LastSampleTimes.Dequeue();
-
 
         if(CurrentTarget == null)
             return;
 
-        bool triggered = false;
-
-        if(SnapshotData == null || SnapshotData.Name != CurrentTarget.Name.ToString()) {
+        if(SnapshotData == null || SnapshotData.Name != CurrentTarget.Name.ToString())
+        {
             Log.Information("Creating new SnapshotData for " + CurrentTarget.Name);
-            SnapshotData = new SnapshotData();
-            SnapshotData.Name = CurrentTarget.Name.ToString();
-            SnapshotData.Entries = [];
-            SnapshotData.StartTime = System.DateTime.Now;
+            SnapshotData = new SnapshotData
+            {
+                Name = CurrentTarget.Name.ToString(),
+                Entries = new List<SnapshotDataEntry>(),
+                StartTime = DateTime.Now
+            };
         }
 
-        if(SamplingIntervalMs == 0 || now - LastSampleTimes.Last() >= SamplingIntervalMs)
+        long now = Environment.TickCount64;
+
+        if(SamplingIntervalMs == 0 || SampleTracker.LastSampleTime == 0 || now - SampleTracker.LastSampleTime >= SamplingIntervalMs)
         {
-            var entry = new SnapshotDataEntry();
-            entry.Position = CurrentTarget.Position;
-            entry.Rotation = CurrentTarget.Rotation;
-            entry.Time = System.DateTime.Now;
+            var entry = new SnapshotDataEntry
+            {
+                Position = CurrentTarget.Position,
+                Rotation = CurrentTarget.Rotation,
+                Time = DateTime.Now
+            };
             SnapshotData.Entries.Add(entry);
 
-            LastSampleTimes.Enqueue(now);
-            triggered = true;
-        }
-
-        if(triggered)
-        {
-            int bin = (int)((now - timelineStartMs) / BinSizeMs);
-            if(bin >= 0 && bin < BinCount)
-                TriggerBins[bin] = true;
+            SampleTracker.AddSample();
         }
     }
 
