@@ -225,6 +225,13 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
                 SnapshotData.Entries.Add(entry);
 
                 SampleTracker.AddSample();
+
+                if(SnapshotData.Entries.Count == 1)
+                {
+                    // fresh RDP
+                    RunRDP();
+                    DBScanResult = null;
+                }
             }
         }
     }

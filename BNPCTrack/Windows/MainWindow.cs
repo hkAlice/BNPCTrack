@@ -69,7 +69,8 @@ public class MainWindow : Window, IDisposable
         ImGui.Text($"BNPCs: {Plugin.BNPCCount}");
 
         // sample presets
-        if(ImGui.BeginCombo("Presets", GetPresetLabel(Plugin.SamplingIntervalMs)))
+        ImGui.PushItemWidth(150f);
+        if(ImGui.BeginCombo("Sampling Rate", GetPresetLabel(Plugin.SamplingIntervalMs)))
         {
             if(ImGui.Selectable("Every Frame", Plugin.SamplingIntervalMs == 0))
                 Plugin.SamplingIntervalMs = 0;
@@ -82,6 +83,8 @@ public class MainWindow : Window, IDisposable
 
             ImGui.EndCombo();
         }
+        ImGui.PopItemWidth();
+
         ImGui.NewLine();
 
         Plugin.SampleTracker.DrawTimelineUI();
@@ -99,7 +102,7 @@ public class MainWindow : Window, IDisposable
             ImGui.TextUnformatted("Currently capturing " + targetObject.Name);
         }
 
-        if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count() > 0)
+        if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count > 0)
         {
             var diff = Plugin.SnapshotData.Entries.LastOrDefault().Time.Subtract(Plugin.SnapshotData.StartTime);
             
@@ -132,8 +135,7 @@ public class MainWindow : Window, IDisposable
                 Plugin.RunRDP();
             }
 
-            if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count > 1 
-                && Plugin.RDPSimplifiedResult != null && Plugin.RDPSimplifiedResult.Points.Count > 1)
+            if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count > 1)
             {
                 ImGui.TextUnformatted("Loops: " + Plugin.RDPSimplifiedResult.IsLoop.ToString());
                 ImGui.SameLine(100f);
@@ -307,59 +309,62 @@ public class MainWindow : Window, IDisposable
                 // todo: csv stuf
             }
 
-            if(ImGui.BeginTable("DataTable", 5, ImGuiTableFlags.ScrollY | ImGuiTableFlags.RowBg))
+            if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count > 0)
             {
-                // set table headers
-                ImGui.TableSetupScrollFreeze(0, 1);
-                ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.None);
-                ImGui.TableSetupColumn("Position X", ImGuiTableColumnFlags.None);
-                ImGui.TableSetupColumn("Position Y", ImGuiTableColumnFlags.None);
-                ImGui.TableSetupColumn("Position Z", ImGuiTableColumnFlags.None);
-                ImGui.TableSetupColumn("Rotation", ImGuiTableColumnFlags.None);
-                ImGui.TableHeadersRow();
-
-                float scrollY = ImGui.GetScrollY();
-                float maxScrollY = ImGui.GetScrollMaxY();
-                bool isBottom = (scrollY >= maxScrollY - 50.0f); // :flushed:
-
-                var clipper = new ImGuiListClipper();
-                clipper.Begin(Plugin.SnapshotData.Entries.Count);
-
-                while(clipper.Step())
+                if(ImGui.BeginTable("DataTable", 5, ImGuiTableFlags.ScrollY | ImGuiTableFlags.RowBg))
                 {
-                    for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
+                    // set table headers
+                    ImGui.TableSetupScrollFreeze(0, 1);
+                    ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.None);
+                    ImGui.TableSetupColumn("Position X", ImGuiTableColumnFlags.None);
+                    ImGui.TableSetupColumn("Position Y", ImGuiTableColumnFlags.None);
+                    ImGui.TableSetupColumn("Position Z", ImGuiTableColumnFlags.None);
+                    ImGui.TableSetupColumn("Rotation", ImGuiTableColumnFlags.None);
+                    ImGui.TableHeadersRow();
+
+                    float scrollY = ImGui.GetScrollY();
+                    float maxScrollY = ImGui.GetScrollMaxY();
+                    bool isBottom = (scrollY >= maxScrollY - 50.0f); // :flushed:
+
+                    var clipper = new ImGuiListClipper();
+                    clipper.Begin(Plugin.SnapshotData.Entries.Count);
+
+                    while(clipper.Step())
                     {
-                        var data = Plugin.SnapshotData.Entries[row];
+                        for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
+                        {
+                            var data = Plugin.SnapshotData.Entries[row];
 
-                        ImGui.TableNextRow();
+                            ImGui.TableNextRow();
 
-                        ImGui.TableSetColumnIndex(0);
-                        ImGui.Text(data.Time.ToString("HH:mm:ss.fff"));
+                            ImGui.TableSetColumnIndex(0);
+                            ImGui.Text(data.Time.ToString("HH:mm:ss.fff"));
 
-                        ImGui.TableSetColumnIndex(1);
-                        ImGui.Text(data.Position.X.ToString("F6"));
+                            ImGui.TableSetColumnIndex(1);
+                            ImGui.Text(data.Position.X.ToString("F6"));
 
-                        ImGui.TableSetColumnIndex(2);
-                        ImGui.Text(data.Position.Y.ToString("F6"));
+                            ImGui.TableSetColumnIndex(2);
+                            ImGui.Text(data.Position.Y.ToString("F6"));
 
-                        ImGui.TableSetColumnIndex(3);
-                        ImGui.Text(data.Position.Z.ToString("F6"));
+                            ImGui.TableSetColumnIndex(3);
+                            ImGui.Text(data.Position.Z.ToString("F6"));
 
-                        ImGui.TableSetColumnIndex(4);
-                        ImGui.Text(data.Rotation.ToString("F6"));
+                            ImGui.TableSetColumnIndex(4);
+                            ImGui.Text(data.Rotation.ToString("F6"));
+                        }
                     }
-                }
 
-                clipper.End();
+                    clipper.End();
 
-                if(isBottom)
-                {
+                    if(isBottom)
+                    {
                     
-                    ImGui.SetScrollY(maxScrollY);
+                        ImGui.SetScrollY(maxScrollY);
+                    }
+
+
+                    ImGui.EndTable();
                 }
-
-
-                ImGui.EndTable();
             }
         }
         else
