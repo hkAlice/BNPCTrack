@@ -1,0 +1,12 @@
+{
+  "Author": "hkAlice",
+  "Name": "BNPCTrack",
+  "Punchline": "Track and analyze BNPC behavior.",
+  "Description": "/bnpc to display BNPC data, points and plots",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "plugin",
+    "research",
+    "sapphire"
+  ]
+}

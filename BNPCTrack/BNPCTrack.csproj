@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/13.0.0">
+  <PropertyGroup>
+    <Version>1.0.0.0</Version>
+    <Description>Track aand plot BNPC paths.</Description>
+    <PackageProjectUrl></PackageProjectUrl>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dbscan" Version="3.0.0" />
+    <PackageReference Include="Dbscan.RBush" Version="3.0.0" />
+  </ItemGroup>
+</Project>
