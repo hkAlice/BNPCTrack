@@ -58,7 +58,7 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
         DBScanEpsilon = 0.5f;
         DBScanMinPointsPerCluster = 2;
         RDPEpsilon = 0.5f;
-        SamplingIntervalMs = 0;
+        SamplingIntervalMs = 100;
 
         MainWindow = new MainWindow(this);
 

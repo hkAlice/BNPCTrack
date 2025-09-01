@@ -57,11 +57,15 @@ public class MainWindow : Window, IDisposable
 
         long lastSampleAgo = Plugin.SampleTracker.GetLastSampleAgoMs();
         bool triggered = lastSampleAgo == 0;
+        if(targetObject == null) 
+            lastSampleAgo = 0;
 
-        ImGui.Text($"Last Sample: {lastSampleAgo} ms");
-        ImGui.SameLine(400f);
+        ImGui.Text($"Last Sample: {lastSampleAgo} ");
+        ImGui.SameLine(120f);
+        ImGui.Text(" ms");
+        ImGui.SameLine(180f);
         ImGui.Text($"Samples/s: {Plugin.SampleTracker.GetSPS():0.##}");
-        ImGui.SameLine(200f);
+        ImGui.SameLine(320f);
         ImGui.Text($"BNPCs: {Plugin.BNPCCount}");
 
         // sample presets
