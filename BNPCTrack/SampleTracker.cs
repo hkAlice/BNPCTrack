@@ -41,7 +41,7 @@ public class SampleTracker
         }
 
         int bin = (int)((now - timelineStartMs) / binSizeMs);
-        if (bin >= 0 && bin < binCount)
+        if(bin >= 0 && bin < binCount)
             triggerBins[bin] = true;
 
         // Update SPS queue
@@ -52,13 +52,8 @@ public class SampleTracker
 
     public float GetSPS() => lastTriggerTimes.Count;
 
-    public long GetLastSampleAgoMs()
-    {
-        if(LastSampleTime == 0)
-            return 0;
+    public long LastSampleAgoMs => LastSampleTime == 0 ? 0 : Environment.TickCount64 - LastSampleTime;
 
-        return Environment.TickCount64 - LastSampleTime;
-    }
 
     // draw timeline strip
     public void DrawTimelineUI()

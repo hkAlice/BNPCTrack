@@ -16,6 +16,7 @@ using BNPCTrack.Windows;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 namespace BNPCTrack;
 
 public sealed class BNPCTrackPlugin : IDalamudPlugin
@@ -47,7 +48,8 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
     public RDPResult RDPSimplifiedResult { get; set; }
     public long SamplingIntervalMs { get; set; }
     public long BNPCCount { get; set; }
-    
+    public ulong? SelectedBNPCId = null;
+
     public SampleTracker SampleTracker = new SampleTracker();
 
     public BNPCTrackPlugin()
@@ -152,13 +154,15 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
             );
 
             DBScanResult = [];
+            int id = 0;
             foreach(var cluster in clusters.Clusters)
             {
+                id++;
                 var points3d = cluster.Objects
                     .Select(e => new Vector3(e.Position.X, e.Position.Y, e.Position.Z))
                     .ToList();
 
-                var cluster3d = new Dbscan3D.Cluster(0);
+                var cluster3d = new Dbscan3D.Cluster(id);
                 cluster3d.Points = points3d;
                 DBScanResult.Add(cluster3d);
             }
@@ -170,39 +174,58 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
         ToggleMainUI();
     }
 
+    public List<(ulong Id, string Name, float Distance)> GetBNPCList()
+    {
+        var playerPos = ClientState.LocalPlayer.Position;
+        return ObjectTable
+            .Where(o => o is { ObjectKind: (Dalamud.Game.ClientState.Objects.Enums.ObjectKind)ObjectKind.BattleNpc })
+            .Select(o => (
+                Id: o.GameObjectId,
+                Name: o.Name.ToString(),
+                Distance: Vector3.Distance(playerPos, o.Position)
+            ))
+            .OrderBy(x => x.Name)
+            .ToList();
+    }
+
+
     private unsafe void Update(IFramework framework)
     {
-        CurrentTarget = BNPCTrackPlugin.TargetManager.FocusTarget;
-
         BNPCCount = ObjectTable.Where(o => o is { ObjectKind: (Dalamud.Game.ClientState.Objects.Enums.ObjectKind)ObjectKind.BattleNpc }).Count();
 
-        if(CurrentTarget == null)
-            return;
-
-        if(SnapshotData == null || SnapshotData.Name != CurrentTarget.Name.ToString())
+        if(SelectedBNPCId.HasValue)
         {
-            Log.Information("Creating new SnapshotData for " + CurrentTarget.Name);
-            SnapshotData = new SnapshotData
+            CurrentTarget = ObjectTable.FirstOrDefault(o => o.GameObjectId == SelectedBNPCId.Value);
+            if(CurrentTarget == null)
+                return;
+
+            if(SnapshotData == null || SnapshotData.GameObjectId != CurrentTarget.GameObjectId)
             {
-                Name = CurrentTarget.Name.ToString(),
-                Entries = new List<SnapshotDataEntry>(),
-                StartTime = DateTime.Now
-            };
-        }
+                Log.Information("Creating new SnapshotData for " + CurrentTarget.Name);
+                SnapshotData = new SnapshotData
+                {
+                    GameObjectId = CurrentTarget.GameObjectId,
+                    Name = CurrentTarget.Name.ToString(),
+                    Entries = new List<SnapshotDataEntry>(),
+                    StartTime = DateTime.Now
+                };
+            }
 
-        long now = Environment.TickCount64;
+            long now = Environment.TickCount64;
 
-        if(SamplingIntervalMs == 0 || SampleTracker.LastSampleTime == 0 || now - SampleTracker.LastSampleTime >= SamplingIntervalMs)
-        {
-            var entry = new SnapshotDataEntry
+            if(SamplingIntervalMs == 0 || SampleTracker.LastSampleTime == 0 
+                || now - SampleTracker.LastSampleTime >= SamplingIntervalMs)
             {
-                Position = CurrentTarget.Position,
-                Rotation = CurrentTarget.Rotation,
-                Time = DateTime.Now
-            };
-            SnapshotData.Entries.Add(entry);
+                var entry = new SnapshotDataEntry
+                {
+                    Position = CurrentTarget.Position,
+                    Rotation = CurrentTarget.Rotation,
+                    Time = DateTime.Now
+                };
+                SnapshotData.Entries.Add(entry);
 
-            SampleTracker.AddSample();
+                SampleTracker.AddSample();
+            }
         }
     }
 

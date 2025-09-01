@@ -55,7 +55,7 @@ public class MainWindow : Window, IDisposable
     {
         var targetObject = Plugin.CurrentTarget;
 
-        long lastSampleAgo = Plugin.SampleTracker.GetLastSampleAgoMs();
+        long lastSampleAgo = Plugin.SampleTracker.LastSampleAgoMs;
         bool triggered = lastSampleAgo == 0;
         if(targetObject == null) 
             lastSampleAgo = 0;
@@ -85,6 +85,8 @@ public class MainWindow : Window, IDisposable
         ImGui.NewLine();
 
         Plugin.SampleTracker.DrawTimelineUI();
+
+        DrawBNPCSelector();
 
         if(targetObject != null)
         {
@@ -217,9 +219,6 @@ public class MainWindow : Window, IDisposable
                 }
             }
 
-
-
-
             ImGui.Separator();
             ImGui.TextUnformatted("DBSCAN (Use for BNPCs that stop or have cluster positions)");
 
@@ -228,8 +227,9 @@ public class MainWindow : Window, IDisposable
             ImGui.InputInt("Cluster Point Count", ref minPoints);
             if(minPoints < 1)
                 minPoints = 1;
-
             Plugin.DBScanMinPointsPerCluster = minPoints;
+
+            ImGui.SameLine();
 
             // epsilon (distance threshold)
             float epsilon = Plugin.DBScanEpsilon;
@@ -349,6 +349,42 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Spacing();
     }
+
+    private void DrawBNPCSelector()
+    {
+        var bnpcs = Plugin.GetBNPCList();
+
+        if(ImGui.BeginTable("BNPC Selector", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders))
+        {
+            ImGui.TableSetupColumn("Name");
+            ImGui.TableSetupColumn("Id");
+            ImGui.TableSetupColumn("Distance");
+            ImGui.TableHeadersRow();
+
+            foreach(var bnpc in bnpcs)
+            {
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+
+                bool isSelected = Plugin.SelectedBNPCId == bnpc.Id;
+                string label = $"{bnpc.Name}##{bnpc.Id}";
+
+                if(ImGui.Selectable(label, isSelected, ImGuiSelectableFlags.SpanAllColumns))
+                {
+                    Plugin.SelectedBNPCId = isSelected ? (uint?)null : bnpc.Id; // toggle selection
+                }
+
+                ImGui.TableNextColumn();
+                ImGui.Text(bnpc.Id.ToString());
+
+                ImGui.TableNextColumn();
+                ImGui.Text($"{bnpc.Distance:0.##}");
+            }
+
+            ImGui.EndTable();
+        }
+    }
+
 
     private string GetPresetLabel(long ms)
     {

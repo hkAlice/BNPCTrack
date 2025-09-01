@@ -83,7 +83,7 @@ public class Dbscan3D
             {
                 labels[current] = clusterId;
                 var newNeighbors = RegionQuery(points, current, epsilon);
-                if (newNeighbors.Count >= minPoints)
+                if(newNeighbors.Count >= minPoints)
                     neighbors.AddRange(newNeighbors.Where(n => !neighbors.Contains(n)));
             }
             i++;

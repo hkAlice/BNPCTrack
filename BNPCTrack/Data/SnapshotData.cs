@@ -4,6 +4,7 @@ using System.Numerics;
 
 public class SnapshotData
 {
+    public ulong GameObjectId;
     public string Name;
     public DateTime StartTime;
     public DateTime EndTime;
