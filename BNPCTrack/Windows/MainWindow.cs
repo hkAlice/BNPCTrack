@@ -53,12 +53,61 @@ public class MainWindow : Window, IDisposable
 
     public unsafe override void Draw()
     {
-        ImGui.TextUnformatted("It is recommended to run at high FPS for more data.");
         var targetObject = Plugin.CurrentTarget;
+
+        long lastSampleAgo = -1;
+        if(targetObject != null && Plugin.LastSampleTimes.Count() > 0)
+            lastSampleAgo = Environment.TickCount64 - Plugin.LastSampleTimes.Last();
+        float sps = Plugin.LastSampleTimes.Count;
+
+        ImGui.Text($"Last Sample: {lastSampleAgo} ms");
+        ImGui.SameLine(400f);
+        ImGui.Text($"Samples/s: {sps:0.##}");
+        ImGui.SameLine(200f);
+        ImGui.Text($"BNPCs: {Plugin.BNPCCount}");
+
+        // sample presets
+        if(ImGui.BeginCombo("Presets", GetPresetLabel(Plugin.SamplingIntervalMs)))
+        {
+            if(ImGui.Selectable("Every Frame", Plugin.SamplingIntervalMs == 0))
+                Plugin.SamplingIntervalMs = 0;
+            if(ImGui.Selectable("10 Hz (100ms)", Plugin.SamplingIntervalMs == 100))
+                Plugin.SamplingIntervalMs = 100;
+            if(ImGui.Selectable("5 Hz (200ms)", Plugin.SamplingIntervalMs == 200))
+                Plugin.SamplingIntervalMs = 200;
+            if(ImGui.Selectable("1 Hz (1000ms)", Plugin.SamplingIntervalMs == 1000))
+                Plugin.SamplingIntervalMs = 1000;
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.Text($"Sampling Timeline (last {BNPCTrackPlugin.TimelineWindowMs}ms)");
+
+        ImGui.BeginChild("timeline", new System.Numerics.Vector2(0, 30), false);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0, 0));
+        for (int i = 0; i < BNPCTrackPlugin.BinCount; i++)
+        {
+            bool triggered = Plugin.TriggerBins[i];
+
+            var color = triggered
+                ? new Vector4(0f, 1f, 0f, 1f)       // green = sampled
+                : new Vector4(0.2f, 0.2f, 0.2f, 1f); // gray = no sample
+            ImGui.SameLine();
+            ImGui.TextColored(color, "■");
+        }
+        ImGui.PopStyleVar();
+
+        ImGui.EndChild();
+
         if(targetObject != null)
         {
+            var recColor = lastSampleAgo == 0 ? new Vector4(1f, 0f, 0f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
+            ImGui.TextColored(recColor, "●");
+            ImGui.SameLine(24);
             ImGui.TextUnformatted("Currently capturing " + targetObject.Name);
         }
+
         if(Plugin.SnapshotData != null)
         {
             var diff = Plugin.SnapshotData.Entries.LastOrDefault().Time.Subtract(Plugin.SnapshotData.StartTime);
@@ -312,5 +361,17 @@ public class MainWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
+    }
+
+    private string GetPresetLabel(long ms)
+    {
+        return ms switch
+        {
+            0 => "Every Frame",
+            100 => "10 Hz (100ms)",
+            200 => "5 Hz (200ms)",
+            1000 => "1 Hz (1000ms)",
+            _ => $"{1000f / ms:0.##} Hz ({ms}ms)"
+        };
     }
 }
