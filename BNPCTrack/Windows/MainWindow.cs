@@ -88,15 +88,18 @@ public class MainWindow : Window, IDisposable
 
         DrawBNPCSelector();
 
+        ImGui.Separator();
+
         if(targetObject != null)
         {
+            
             var recColor = triggered ? new Vector4(1f, 0f, 0f, 1f) : new Vector4(0.2f, 0.2f, 0.2f, 1f);
             ImGui.TextColored(recColor, "●");
             ImGui.SameLine(24);
             ImGui.TextUnformatted("Currently capturing " + targetObject.Name);
         }
 
-        if(Plugin.SnapshotData != null)
+        if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count() > 0)
         {
             var diff = Plugin.SnapshotData.Entries.LastOrDefault().Time.Subtract(Plugin.SnapshotData.StartTime);
             
@@ -108,16 +111,21 @@ public class MainWindow : Window, IDisposable
             ImGui.TextUnformatted("Time Elapsed: " + diff.ToString("mm\\:ss\\.ff"));
 
             var velocitySamplesAll = Velocity.ComputeVelocities(Plugin.SnapshotData.Entries);
-
-            ImGui.TextUnformatted("Velocity: " + velocitySamplesAll.LastOrDefault().Vector.ToString());
-            ImGui.TextUnformatted("Speed: " + velocitySamplesAll.LastOrDefault().Speed.ToString());
+            if(velocitySamplesAll != null && velocitySamplesAll.Count() > 0)
+            {
+                ImGui.TextUnformatted("Velocity: " + velocitySamplesAll.LastOrDefault().Vector.ToString());
+                ImGui.TextUnformatted("Speed: " + velocitySamplesAll.LastOrDefault().Speed.ToString());
+            }
 
             ImGui.Separator();
             ImGui.TextUnformatted("RDP (Continuous patrol paths)");
             // epsilon (distance threshold)
             float rdpEpsilon = Plugin.RDPEpsilon;
+            ImGui.PushItemWidth(100f);
             ImGui.InputFloat("Epsilon", ref rdpEpsilon, 0.01f, 10.0f, "%.2f");
             Plugin.RDPEpsilon = rdpEpsilon;
+            ImGui.PopItemWidth();
+            ImGui.SameLine();
 
             if(ImGui.Button("Run RDP"))
             {
@@ -222,19 +230,19 @@ public class MainWindow : Window, IDisposable
             ImGui.Separator();
             ImGui.TextUnformatted("DBSCAN (Use for BNPCs that stop or have cluster positions)");
 
+            ImGui.PushItemWidth(100f);
+            // epsilon (distance threshold)
+            float epsilon = Plugin.DBScanEpsilon;
+            ImGui.InputFloat("Epsilon", ref epsilon, 0.01f, 1.0f, "%.2f");
+            Plugin.DBScanEpsilon = epsilon;
+            ImGui.SameLine();
             // min points per cluster
             int minPoints = Plugin.DBScanMinPointsPerCluster;
             ImGui.InputInt("Cluster Point Count", ref minPoints);
             if(minPoints < 1)
                 minPoints = 1;
             Plugin.DBScanMinPointsPerCluster = minPoints;
-
-            ImGui.SameLine();
-
-            // epsilon (distance threshold)
-            float epsilon = Plugin.DBScanEpsilon;
-            ImGui.InputFloat("Epsilon", ref epsilon, 0.01f, 1.0f, "%.2f");
-            Plugin.DBScanEpsilon = epsilon;
+            ImGui.PopItemWidth();
 
             int impl = Plugin.DBScanImpl;
             if(ImGui.RadioButton("3D Simple", impl == 0)) { impl = 0; }
@@ -285,6 +293,18 @@ public class MainWindow : Window, IDisposable
                         drawList.AddCircleFilled(pos, 3f, color);
                     }
                 }
+            }
+
+            ImGui.Separator();
+
+            if(ImGui.Button("Clear capture"))
+            {
+                Plugin.SnapshotData = null;
+            }
+            ImGui.SameLine();
+            if(ImGui.Button("Export to CSV"))
+            {
+                // todo: csv stuf
             }
 
             if(ImGui.BeginTable("DataTable", 5, ImGuiTableFlags.ScrollY | ImGuiTableFlags.RowBg))
@@ -344,7 +364,7 @@ public class MainWindow : Window, IDisposable
         }
         else
         {
-            ImGui.TextUnformatted("Focus Target an actor to begin");
+            ImGui.TextUnformatted("Select an actor to begin capture");
         }
 
         ImGui.Spacing();
