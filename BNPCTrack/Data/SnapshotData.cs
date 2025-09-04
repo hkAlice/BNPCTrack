@@ -9,6 +9,7 @@ public class SnapshotData
     public DateTime StartTime;
     public DateTime EndTime;
     public List<SnapshotDataEntry> Entries;
+    public bool HadAggro;
 }
 
 public class SnapshotDataEntry

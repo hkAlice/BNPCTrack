@@ -17,12 +17,20 @@ using static Dbscan3D;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using System.Collections.Generic;
 using BNPCTrack;
+using Dalamud.Interface.ImGuiFileDialog;
+using CsvHelper;
+using System.Globalization;
+using System.IO;
+using CsvHelper.Configuration;
+using static FFXIVClientStructs.FFXIV.Common.Component.BGCollision.MeshPCB;
+using System.Collections;
 
 namespace BNPCTrack.Windows;
 
 public class MainWindow : Window, IDisposable
 {
     private BNPCTrackPlugin Plugin;
+    private FileDialogManager FileDialogManager { get; }
 
     public MainWindow(BNPCTrackPlugin plugin)
         : base("BNPCTrack##welcome to hell", ImGuiWindowFlags.NoScrollWithMouse)
@@ -31,6 +39,11 @@ public class MainWindow : Window, IDisposable
         {
             MinimumSize = new Vector2(500, 500),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
+        };
+
+        this.FileDialogManager = new FileDialogManager
+        {
+            AddedWindowFlags = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoDocking,
         };
 
         Plugin = plugin;
@@ -106,17 +119,24 @@ public class MainWindow : Window, IDisposable
         {
             var diff = Plugin.SnapshotData.Entries.LastOrDefault().Time.Subtract(Plugin.SnapshotData.StartTime);
             
-            ImGui.TextUnformatted("Capture Data");
             ImGui.TextUnformatted("Name: " + Plugin.SnapshotData.Name.ToString());
+            if(Plugin.SnapshotData.HadAggro)
+            {
+                ImGui.SameLine(400f);
+                ImGui.TextColored(new Vector4(1.0f, 0.1f, 0.4f, 1.0f), "BNPC has had aggro");
+            }
             ImGui.TextUnformatted("Pos: " + Plugin.SnapshotData.Entries.LastOrDefault().Position.ToString());
+            ImGui.SameLine(400f);
             ImGui.TextUnformatted("Rot: " + Plugin.SnapshotData.Entries.LastOrDefault().Rotation.ToString());
             ImGui.TextUnformatted("Entries: " + Plugin.SnapshotData.Entries.Count.ToString() + " points");
+            ImGui.SameLine(400f);
             ImGui.TextUnformatted("Time Elapsed: " + diff.ToString("mm\\:ss\\.ff"));
 
             var velocitySamplesAll = Velocity.ComputeVelocities(Plugin.SnapshotData.Entries);
             if(velocitySamplesAll != null && velocitySamplesAll.Count() > 0)
             {
                 ImGui.TextUnformatted("Velocity: " + velocitySamplesAll.LastOrDefault().Vector.ToString());
+                ImGui.SameLine(400f);
                 ImGui.TextUnformatted("Speed: " + velocitySamplesAll.LastOrDefault().Speed.ToString());
             }
 
@@ -129,6 +149,11 @@ public class MainWindow : Window, IDisposable
             Plugin.RDPEpsilon = rdpEpsilon;
             ImGui.PopItemWidth();
             ImGui.SameLine();
+            float rdpLoopTolerance = Plugin.LoopTolerance;
+            ImGui.PushItemWidth(100f);
+            ImGui.InputFloat("Loop Tolerance", ref rdpLoopTolerance, 0.01f, 10.0f, "%.2f");
+            Plugin.LoopTolerance = rdpLoopTolerance;
+            ImGui.PopItemWidth();
 
             if(ImGui.Button("Run RDP"))
             {
@@ -156,77 +181,179 @@ public class MainWindow : Window, IDisposable
                 }
 
                 Vector2 plotSize = new Vector2(400, 400);
-                Vector2 plotPos = ImGui.GetCursorScreenPos();
-                ImGui.Dummy(plotSize);
 
-                var drawList = ImGui.GetWindowDrawList();
-                drawList.AddRect(plotPos, plotPos + plotSize, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)));
+                // left side of column: plotter
+                ImGui.BeginGroup();
+                { 
+                    Vector2 plotPos = ImGui.GetCursorScreenPos();
+                    ImGui.Dummy(plotSize);
 
-                // plot padding so it doesn't draw on border
-                float minX = MathF.Min(rawPoints.Min(p => p.X), simplified.Min(p => p.X));
-                float maxX = MathF.Max(rawPoints.Max(p => p.X), simplified.Max(p => p.X));
-                float minZ = MathF.Min(rawPoints.Min(p => p.Z), simplified.Min(p => p.Z));
-                float maxZ = MathF.Max(rawPoints.Max(p => p.Z), simplified.Max(p => p.Z));
+                    var drawList = ImGui.GetWindowDrawList();
+                    drawList.AddRect(plotPos, plotPos + plotSize, ImGui.GetColorU32(new Vector4(1, 1, 1, 1)));
 
-                float paddingX = (maxX - minX) * 0.05f;
-                float paddingZ = (maxZ - minZ) * 0.05f;
-                minX -= paddingX; maxX += paddingX;
-                minZ -= paddingZ; maxZ += paddingZ;
+                    // plot padding so it doesn't draw on border
+                    float minX = MathF.Min(rawPoints.Min(p => p.X), simplified.Min(p => p.X));
+                    float maxX = MathF.Max(rawPoints.Max(p => p.X), simplified.Max(p => p.X));
+                    float minZ = MathF.Min(rawPoints.Min(p => p.Z), simplified.Min(p => p.Z));
+                    float maxZ = MathF.Max(rawPoints.Max(p => p.Z), simplified.Max(p => p.Z));
 
-                Func<Vector3, Vector2> toScreen = (p) =>
+                    float padX = (maxX - minX) * 0.05f;
+                    float padZ = (maxZ - minZ) * 0.05f;
+                    minX -= padX; maxX += padX;
+                    minZ -= padZ; maxZ += padZ;
+
+                    float rangeX = maxX - minX;
+                    float rangeZ = maxZ - minZ;
+                    float scale = MathF.Min(plotSize.X / rangeX, plotSize.Y / rangeZ);
+
+                    float offsetX = (plotSize.X - rangeX * scale) * 0.5f;
+                    float offsetZ = (plotSize.Y - rangeZ * scale) * 0.5f;
+
+                    // flip Z i guess
+                    bool flipZ = true;
+
+                    Func<Vector3, Vector2> toScreen = (p) =>
+                    {
+                        float x = (p.X - minX) * scale + offsetX;
+                        float z = (p.Z - minZ) * scale + offsetZ;
+
+                        if(flipZ)
+                            z = plotSize.Y - z;
+
+                        return plotPos + new Vector2(x, z);
+                    };
+
+
+                    // raw path (gray)
+                    foreach(var p in rawPoints)
+                    {
+                        Vector2 pos = toScreen(p);
+                        drawList.AddCircleFilled(pos, 2f, ImGui.GetColorU32(new Vector4(0.6f, 0.6f, 0.6f, 0.3f)));
+                    }
+
+                    // simplified RDP paths
+                    // velocity to color (blue = slow, red = fast)
+                    float maxSpeed = velocitySamples.Max(v => v.Speed);
+                    float minSpeed = velocitySamples.Min(v => v.Speed);
+
+                    for(int i = 0; i < simplified.Count - 1; i++)
+                    {
+                        Vector2 a = toScreen(simplified[i]);
+                        Vector2 b = toScreen(simplified[i + 1]);
+
+                        // Skip if too short
+                        Vector2 seg = b - a;
+                        if(seg.LengthSquared() < 1e-4f)
+                            continue;
+
+                        // Velocity-based color
+                        float speed = velocitySamples.Count > i ? velocitySamples[i].Speed : 0f;
+                        float t = (speed - minSpeed) / MathF.Max(0.01f, maxSpeed - minSpeed);
+                        Vector4 colorVec = new Vector4(t, 0, 1 - t, 1); // blue → red
+                        uint lineColor = ImGui.GetColorU32(colorVec);
+
+                        // Draw line
+                        drawList.AddLine(a, b, lineColor, 2.0f);
+
+                        // Arrow tip
+                        Vector2 dir = Vector2.Normalize(seg);
+                        Vector2 perp = new Vector2(-dir.Y, dir.X);
+                        float arrowSize = 14.0f;
+                        Vector2 tip = b;
+                        Vector2 left = b - dir * arrowSize + perp * (arrowSize * 0.5f);
+                        Vector2 right = b - dir * arrowSize - perp * (arrowSize * 0.5f);
+                        drawList.AddTriangleFilled(tip, left, right, lineColor);
+                    }
+
+                    // waypoints
+                    for(int i = 0; i < simplified.Count; i++)
+                    {
+                        Vector2 pos = toScreen(simplified[i]);
+                        uint color = (i == 0) ? ImGui.GetColorU32(new Vector4(0, 1, 1, 1))    // start
+                                 : (i == simplified.Count - 1) ? ImGui.GetColorU32(new Vector4(1, 0, 0, 1)) // end
+                                 : ImGui.GetColorU32(new Vector4(1, 1, 0, 1)); // middle
+                        drawList.AddCircleFilled(pos, 4f, color);
+                    }
+                }
+                ImGui.EndGroup();
+
+                ImGui.SameLine();
+
+                // right side point table
+                ImGui.BeginGroup();
+                float tableHeight = plotSize.Y;
+
+                ImGui.BeginChild("RDPTableChild", new Vector2(0, tableHeight), false);
                 {
-                    float xNorm = (p.X - minX) / (maxX - minX);
-                    float zNorm = (p.Z - minZ) / (maxZ - minZ);
-                    return new Vector2(
-                        plotPos.X + xNorm * plotSize.X,
-                        plotPos.Y + (1 - zNorm) * plotSize.Y
-                    );
-                };
+                    if(ImGui.BeginTable("RDPPointsTable", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY, new Vector2(0, tableHeight - 26)))
+                    {
+                        ImGui.TableSetupColumn("#");
+                        ImGui.TableSetupColumn("X");
+                        ImGui.TableSetupColumn("Y");
+                        ImGui.TableSetupColumn("Z");
+                        ImGui.TableSetupColumn("SegLen");
+                        ImGui.TableSetupColumn("CumDist");
+                        ImGui.TableHeadersRow();
 
-                // raw path (gray)
-                foreach(var p in rawPoints)
-                {
-                    Vector2 pos = toScreen(p);
-                    drawList.AddCircleFilled(pos, 2f, ImGui.GetColorU32(new Vector4(0.6f, 0.6f, 0.6f, 0.3f)));
+                        float cumulative = 0f;
+
+                        for(int i = 0; i < simplified.Count; i++)
+                        {
+                            float segLen = 0f;
+                            if(i > 0)
+                            {
+                                segLen = Vector3.Distance(simplified[i], simplified[i - 1]);
+                                cumulative += segLen;
+                            }
+
+                            ImGui.TableNextRow();
+                            ImGui.TableSetColumnIndex(0); ImGui.Text(i.ToString());
+                            ImGui.TableSetColumnIndex(1); ImGui.Text($"{simplified[i].X:F2}");
+                            ImGui.TableSetColumnIndex(2); ImGui.Text($"{simplified[i].Y:F2}");
+                            ImGui.TableSetColumnIndex(3); ImGui.Text($"{simplified[i].Z:F2}");
+                            ImGui.TableSetColumnIndex(4); ImGui.Text($"{segLen:F2}");
+                            ImGui.TableSetColumnIndex(5); ImGui.Text($"{cumulative:F2}");
+                        }
+
+                        ImGui.EndTable();
+                    }
+                    if(ImGui.Button("Export CSV"))
+                    {
+                        string filename = $"RDP_{Plugin.CurrentTarget.GameObjectId}_{Plugin.CurrentTarget.Name}.csv";
+
+                        float cumulative = 0f;
+
+                        var records = simplified.Select((p, i) =>
+                        {
+                            float segLen = 0f;
+                            if(i > 0)
+                                segLen = Vector3.Distance(p, simplified[i - 1]);
+
+                            cumulative += segLen;
+
+                            return new
+                            {
+                                Index = i,
+                                X = p.X,
+                                Y = p.Y,
+                                Z = p.Z,
+                                SegmentLength = segLen,
+                                CumulativeDistance = cumulative
+                            };
+                        }).ToList();
+
+                        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+                        {
+                            HasHeaderRecord = true
+                        };
+
+                        ExportToCSV(filename, records);
+                    }
                 }
 
-                // simplified RDP paths
-                // velocity to color (blue = slow, red = fast)
-                float maxSpeed = velocitySamples.Max(v => v.Speed);
-                float minSpeed = velocitySamples.Min(v => v.Speed);
+                ImGui.EndChild();
 
-                for(int i = 0; i < simplified.Count - 1; i++)
-                {
-                    Vector2 a = toScreen(simplified[i]);
-                    Vector2 b = toScreen(simplified[i + 1]);
-
-                    // find approx speed for this segment using nearest sample
-                    float speed = velocitySamples.Count > i ? velocitySamples[i].Speed : 0f;
-                    float t = (speed - minSpeed) / MathF.Max(0.01f, maxSpeed - minSpeed);
-                    Vector4 colorVec = new Vector4(t, 0, 1 - t, 1); // interpolate blue -> red
-                    uint lineColor = ImGui.GetColorU32(colorVec);
-
-                    drawList.AddLine(a, b, lineColor, 2.0f);
-
-                    // direction arrow or attempt to lol
-                    Vector2 dir = Vector2.Normalize(b - a);
-                    Vector2 perp = new Vector2(-dir.Y, dir.X);
-                    float arrowSize = 14.0f;
-                    Vector2 tip = b;
-                    Vector2 left = b - dir * arrowSize + perp * (arrowSize * 0.5f);
-                    Vector2 right = b - dir * arrowSize - perp * (arrowSize * 0.5f);
-                    drawList.AddTriangleFilled(tip, left, right, lineColor);
-                }
-
-                // waypoints
-                for(int i = 0; i < simplified.Count; i++)
-                {
-                    Vector2 pos = toScreen(simplified[i]);
-                    uint color = (i == 0) ? ImGui.GetColorU32(new Vector4(0, 1, 1, 1))    // start
-                             : (i == simplified.Count - 1) ? ImGui.GetColorU32(new Vector4(1, 0, 0, 1)) // end
-                             : ImGui.GetColorU32(new Vector4(1, 1, 0, 1)); // middle
-                    drawList.AddCircleFilled(pos, 4f, color);
-                }
+                ImGui.EndGroup();
             }
 
             ImGui.Separator();
@@ -373,13 +500,16 @@ public class MainWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
+
+        FileDialogManager.Draw();
     }
 
     private void DrawBNPCSelector()
     {
         var bnpcs = Plugin.GetBNPCList();
 
-        if(ImGui.BeginTable("BNPC Selector", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders))
+        if(ImGui.BeginTable("BNPC Selector", 3, 
+            ImGuiTableFlags.ScrollY | ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders, new Vector2(0, 150)))
         {
             ImGui.TableSetupColumn("Name");
             ImGui.TableSetupColumn("Id");
@@ -408,6 +538,21 @@ public class MainWindow : Window, IDisposable
 
             ImGui.EndTable();
         }
+    }
+
+    private void ExportToCSV(string filename, IEnumerable records)
+    {
+        FileDialogManager.SaveFileDialog("Export to CSV", "*.csv", filename, ".csv",
+            (b, s) => {
+                if(b)
+                {
+                    using (var writer = new StreamWriter(s))
+                    using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                    {
+                        csv.WriteRecords(records);
+                    }
+                }
+        }, null, true);
     }
 
 

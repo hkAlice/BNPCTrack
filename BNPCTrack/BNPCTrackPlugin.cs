@@ -17,6 +17,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
 using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Interface.ImGuiFileDialog;
 namespace BNPCTrack;
 
 public sealed class BNPCTrackPlugin : IDalamudPlugin
@@ -46,6 +47,7 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
     public float RDPEpsilon { get; set; }
     public List<Dbscan3D.Cluster> DBScanResult { get; set; }
     public RDPResult RDPSimplifiedResult { get; set; }
+    public float LoopTolerance { get; set; }
     public long SamplingIntervalMs { get; set; }
     public long BNPCCount { get; set; }
     public ulong? SelectedBNPCId = null;
@@ -57,10 +59,11 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         // todo: move this to config
-        DBScanEpsilon = 0.5f;
+        DBScanEpsilon = 0.6f;
         DBScanMinPointsPerCluster = 2;
-        RDPEpsilon = 0.5f;
+        RDPEpsilon = 0.6f;
         SamplingIntervalMs = 100;
+        LoopTolerance = 0.15f;
 
         MainWindow = new MainWindow(this);
 
@@ -96,27 +99,28 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
         var points = SnapshotData.Entries
             .Select(e => new System.Numerics.Vector3(e.Position.X, e.Position.Y, e.Position.Z))
             .ToList();
-        
-        // simplify with RDP
-        var simplified = RdpSimplifier.Simplify(points, epsilon: RDPEpsilon);
 
+        var rot = SnapshotData.Entries
+            .Select(e => e.Rotation)
+            .ToList();
+
+        // optimized loop
+        var optimizedLoop = PatrolAnalyzer.TrimToFullLoop(points, LoopTolerance);
+        //var optimizedLoop = PatrolAnalyzer.ExtractCycleGreedy(points, rot, similarityThreshold: LoopTolerance, extendThreshold: LoopTolerance - 0.1f);
+        var rotatedLoop = PatrolAnalyzer.RotateStart(optimizedLoop);
+        var simplified = RdpSimplifier.Simplify(optimizedLoop, RDPEpsilon);
+        
         RDPSimplifiedResult = new RDPResult();
         RDPSimplifiedResult.Points = simplified;
 
         if(simplified != null)
         {
-            if(PatrolAnalyzer.IsLoop(simplified))
-            {
+            if(PatrolAnalyzer.IsLoop(simplified, LoopTolerance))
                 RDPSimplifiedResult.IsLoop = true;
-            }
-            else
-            {
-                // todo: technically untrue
+            else if(PatrolAnalyzer.IsReverse(simplified, LoopTolerance))
                 RDPSimplifiedResult.IsReverse = true;
-            }
         }
 
-        
     }
 
     public void RunDBSCAN()
@@ -176,6 +180,11 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
 
     public List<(ulong Id, string Name, float Distance)> GetBNPCList()
     {
+        if(ClientState.LocalPlayer == null)
+        {
+            return [];
+        }
+
         var playerPos = ClientState.LocalPlayer.Position;
         return ObjectTable
             .Where(o => o is { ObjectKind: (Dalamud.Game.ClientState.Objects.Enums.ObjectKind)ObjectKind.BattleNpc })
@@ -209,6 +218,11 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
                     Entries = new List<SnapshotDataEntry>(),
                     StartTime = DateTime.Now
                 };
+            }
+
+            if(CurrentTarget.TargetObject != null)
+            {
+                SnapshotData.HadAggro = true;
             }
 
             long now = Environment.TickCount64;
