@@ -21,3 +21,5 @@ The epsilon may be adjusted if the simplified RDP path still has too many points
 
 It is recommended to use a very, very low sampling rate for DBSCAN as it is sensitive to roaming/intermediate clustering points.
 DBSCAN is currently slow as it is O(N^2).
+
+<img width="731" height="1161" alt="image" src="https://github.com/user-attachments/assets/a39398fa-0c7d-4645-99a2-538fb7eb4c30" />
