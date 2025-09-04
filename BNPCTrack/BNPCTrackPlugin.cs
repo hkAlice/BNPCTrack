@@ -104,23 +104,37 @@ public sealed class BNPCTrackPlugin : IDalamudPlugin
             .Select(e => e.Rotation)
             .ToList();
 
-        // optimized loop
-        var optimizedLoop = PatrolAnalyzer.TrimToFullLoop(points, LoopTolerance);
-        //var optimizedLoop = PatrolAnalyzer.ExtractCycleGreedy(points, rot, similarityThreshold: LoopTolerance, extendThreshold: LoopTolerance - 0.1f);
-        var rotatedLoop = PatrolAnalyzer.RotateStart(optimizedLoop);
-        var simplified = RdpSimplifier.Simplify(optimizedLoop, RDPEpsilon);
-        
-        RDPSimplifiedResult = new RDPResult();
-        RDPSimplifiedResult.Points = simplified;
+        var analyzedSegments = PatrolAnalyzer.AnalyzePath(
+            points,
+            rot,
+            rotationThreshold: 150f,
+            loopTolerance: LoopTolerance,
+            minLoopLength: 5
+        );
 
-        if(simplified != null)
+        List<Vector3> allPoints = new List<Vector3>();
+        bool isLoop = false;
+        bool isReverse = false;
+        foreach(var seg in analyzedSegments)
         {
-            if(PatrolAnalyzer.IsLoop(simplified, LoopTolerance))
-                RDPSimplifiedResult.IsLoop = true;
-            else if(PatrolAnalyzer.IsReverse(simplified, LoopTolerance))
-                RDPSimplifiedResult.IsReverse = true;
-        }
+            Log.Information(seg.Points.Count.ToString());
+            if(seg.IsLoop)
+                isLoop = true;
+            if(seg.IsReverse)
+                isReverse = true;
+            // run RDP simplification
+            var simplified = RdpAngled.Simplify(seg.Points, RDPEpsilon);
 
+            allPoints = allPoints.Concat(simplified).ToList();
+            Log.Debug(string.Join(", ", allPoints.ToArray()));
+
+        }
+        RDPSimplifiedResult = new RDPResult
+        {
+            Points = allPoints,
+            IsLoop = isLoop,
+            IsReverse = isReverse
+        };
     }
 
     public void RunDBSCAN()

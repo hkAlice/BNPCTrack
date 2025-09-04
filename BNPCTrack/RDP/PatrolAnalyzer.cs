@@ -2,34 +2,46 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+public class PatrolSegment
+{
+    public List<Vector3> Points;
+    public bool IsLoop;
+    public bool IsReverse;
+}
 
 public static class PatrolAnalyzer
 {
-    // check if patrol loops or reverses/ping-pongs
-    public static bool IsLoop(List<Vector3> points, float loopTolerance = 1.0f)
+    public static List<int> FindSharpRotations(List<float> rotations, float threshold = 150f)
     {
-        if(points.Count < 2)
-            return false;
-
-        return Vector3.Distance(points[0], points[^1]) <= loopTolerance;
+        List<int> reversalIndices = new List<int>();
+        for(int i = 1; i < rotations.Count; i++)
+        {
+            float delta = DeltaAngle(rotations[i - 1], rotations[i]);
+            if(MathF.Abs(delta) >= threshold)
+                reversalIndices.Add(i);
+        }
+        return reversalIndices;
     }
 
-    public static bool IsReverse(List<Vector3> points, float loopTolerance = 1.0f)
+    // check if patrol loops or reverses/ping-pongs
+    public static bool IsLoop(List<Vector3> points, float loopTolerance = 0.15f)
     {
         if(points.Count < 2)
             return false;
-
-        // split roughly in half
+        return Vector3.Distance(points[0], points[^1]) <= loopTolerance;
+    }
+    public static bool IsReverse(List<Vector3> points, float loopTolerance = 0.15f)
+    {
+        if(points.Count < 2)
+            return false;
         int mid = points.Count / 2;
         for(int i = 0; i < mid; i++)
         {
             Vector3 a = points[i];
             Vector3 b = points[points.Count - 1 - i];
-
             if(Vector3.Distance(a, b) > loopTolerance)
                 return false;
         }
-
         return true;
     }
 
@@ -126,7 +138,7 @@ public static class PatrolAnalyzer
 
         // build segments
         List<Vector3> segments = new List<Vector3>();
-        for (int i = 0; i < points.Count - 1; i++)
+        for(int i = 0; i < points.Count - 1; i++)
             segments.Add(points[i + 1] - points[i]);
 
         int loopStart = -1;
@@ -205,6 +217,48 @@ public static class PatrolAnalyzer
         return points.GetRange(loopStart, loopEnd - loopStart + 1);
     }
 
+    public static List<List<Vector3>> SplitPathAtIndices(List<Vector3> points, List<int> splitIndices)
+    {
+        List<List<Vector3>> segments = new List<List<Vector3>>();
+        int start = 0;
+        foreach(int idx in splitIndices)
+        {
+            if(idx > start)
+            {
+                segments.Add(points.GetRange(start, idx - start));
+                start = idx;
+            }
+        }
+        if(start < points.Count)
+            segments.Add(points.GetRange(start, points.Count - start));
+
+        return segments;
+    }
+
+    public static List<PatrolSegment> AnalyzePath(List<Vector3> points, List<float> rotations, float rotationThreshold = 150f, float loopTolerance = 0.3f, int minLoopLength = 5)
+    {
+        List<int> sharpRotationIndices = FindSharpRotations(rotations, rotationThreshold);
+        var rawSegments = SplitPathAtIndices(points, sharpRotationIndices);
+
+        List<PatrolSegment> result = new List<PatrolSegment>();
+
+        foreach(var seg in rawSegments)
+        {
+            var trimmed = TrimToFullLoop(seg, loopTolerance, minLoopLength);
+            if(IsLoop(trimmed, loopTolerance))
+                trimmed = RotateStart(trimmed);
+
+            result.Add(new PatrolSegment
+            {
+                Points = trimmed,
+                IsLoop = IsLoop(trimmed, loopTolerance),
+                IsReverse = IsReverse(trimmed, loopTolerance)
+            });
+        }
+
+        return result;
+    }
+
     private static float SegmentSimilarity(Vector3 a, Vector3 b)
     {
         Vector3 dirA = Vector3.Normalize(a);
@@ -219,8 +273,12 @@ public static class PatrolAnalyzer
     public static float DeltaAngle(float current, float target)
     {
         float delta = (target - current) % 360f;
-        if(delta < -180f) delta += 360f;
-        else if(delta > 180f) delta -= 360f;
+
+        if(delta < -180f)
+            delta += 360f;
+        else if(delta > 180f)
+            delta -= 360f;
+
         return delta;
     }
 

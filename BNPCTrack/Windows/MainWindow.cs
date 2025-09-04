@@ -433,7 +433,28 @@ public class MainWindow : Window, IDisposable
             ImGui.SameLine();
             if(ImGui.Button("Export to CSV"))
             {
-                // todo: csv stuf
+                string filename = $"CAPTURE_{Plugin.CurrentTarget.GameObjectId}_{Plugin.CurrentTarget.Name}.csv";
+
+                var records = Plugin.SnapshotData.Entries.Select((p, i) =>
+                {
+
+                    return new
+                    {
+                        Index = i,
+                        X = p.Position.X,
+                        Y = p.Position.Y,
+                        Z = p.Position.Z,
+                        Rot = p.Rotation,
+                        Time = p.Time.Millisecond
+                    };
+                }).ToList();
+
+                var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+                {
+                    HasHeaderRecord = true
+                };
+
+                ExportToCSV(filename, records);
             }
 
             if(Plugin.SnapshotData != null && Plugin.SnapshotData.Entries.Count > 0)
