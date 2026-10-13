@@ -1,4 +1,3 @@
-using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -7,35 +6,46 @@ public static class RdpAngled
 {
     public static List<Vector3> Simplify(List<Vector3> points, float epsilon, float sharpAngleThresholdDeg = 150f)
     {
-        if(points == null || points.Count < 3)
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(epsilon <= 0)
+            throw new ArgumentOutOfRangeException(nameof(epsilon), "Epsilon must be positive");
+        if(sharpAngleThresholdDeg < 0 || sharpAngleThresholdDeg > 180)
+            throw new ArgumentOutOfRangeException(nameof(sharpAngleThresholdDeg), "Threshold must be between 0 and 180 degrees");
+
+        if(points.Count < 3)
             return new List<Vector3>(points);
 
         // find all sharp turns/180 (we must keep these reverse points, possible edges)
         var mustKeep = FindSharpTurns(points, sharpAngleThresholdDeg);
 
-        Log.Debug(string.Join(", ", mustKeep));
-
         // keep first and last
         mustKeep.Add(0);
         mustKeep.Add(points.Count - 1);
 
-        var result = new List<Vector3>();
-        SimplifySection(points, 0, points.Count - 1, epsilon, result, mustKeep);
+        // Use HashSet for O(1) deduplication and lookup
+        var resultSet = new HashSet<Vector3>(new Vector3Comparer());
+        SimplifySection(points, 0, points.Count - 1, epsilon, resultSet, mustKeep);
 
+        // Convert to list and ensure last point is included
+        var result = new List<Vector3>(resultSet);
         if(!result.Contains(points[^1]))
             result.Add(points[^1]);
+
+        // Sort to preserve original order
+        result.Sort((a, b) => points.IndexOf(a).CompareTo(points.IndexOf(b)));
 
         return result;
     }
 
-    private static void SimplifySection(List<Vector3> points, int start, int end, float epsilon, List<Vector3> result, HashSet<int> mustKeep)
+    private static void SimplifySection(List<Vector3> points, int start, int end, float epsilon, HashSet<Vector3> result, HashSet<int> mustKeep)
     {
         float maxDistance = 0;
         int index = -1;
 
         for(int i = start + 1; i < end; i++)
         {
-            float dist = PerpendicularDistance(points[i], points[start], points[end]);
+            float dist = RdpSimplifier.PerpendicularDistance(points[i], points[start], points[end]);
             if(dist > maxDistance)
             {
                 index = i;
@@ -51,20 +61,10 @@ public static class RdpAngled
         }
         else
         {
-            if(!result.Contains(points[start]))
-                result.Add(points[start]);
+            result.Add(points[start]);
         }
     }
 
-    private static float PerpendicularDistance(Vector3 point, Vector3 lineStart, Vector3 lineEnd)
-    {
-        if(lineStart == lineEnd)
-            return Vector3.Distance(point, lineStart);
-
-        Vector3 line = lineEnd - lineStart;
-        Vector3 proj = lineStart + Vector3.Dot(point - lineStart, line) / line.LengthSquared() * line;
-        return Vector3.Distance(point, proj);
-    }
 
     private static HashSet<int> FindSharpTurns(List<Vector3> points, float thresholdDeg)
     {
@@ -89,5 +89,26 @@ public static class RdpAngled
         }
 
         return keep;
+    }
+
+    private class Vector3Comparer : IEqualityComparer<Vector3>
+    {
+        private const float Epsilon = 1e-6f;
+
+        public bool Equals(Vector3 a, Vector3 b)
+        {
+            return MathF.Abs(a.X - b.X) < Epsilon &&
+                   MathF.Abs(a.Y - b.Y) < Epsilon &&
+                   MathF.Abs(a.Z - b.Z) < Epsilon;
+        }
+
+        public int GetHashCode(Vector3 obj)
+        {
+            // Use a combined hash with reasonable precision
+            int hashX = (int)(obj.X * 1000);
+            int hashY = (int)(obj.Y * 1000);
+            int hashZ = (int)(obj.Z * 1000);
+            return HashCode.Combine(hashX, hashY, hashZ);
+        }
     }
 }

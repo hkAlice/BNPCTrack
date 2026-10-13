@@ -2,17 +2,49 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
-public class VelocitySample
+public struct VelocitySample
 {
     public Vector3 Vector;   // per-axis velocity
     public float Speed;      // magnitude (unified)
     public DateTime Time;    // timestamp for reference
+
+    public bool IsValid => Time != default;
+}
+
+public readonly struct VelocityOption
+{
+    private readonly VelocitySample? _value;
+
+    private VelocityOption(VelocitySample value)
+    {
+        _value = value;
+    }
+
+    public static VelocityOption Some(VelocitySample value) => new(value);
+    public static VelocityOption None => default;
+
+    public bool HasValue => _value.HasValue;
+    public VelocitySample Value => _value ?? throw new InvalidOperationException("No value present");
+
+    public T Match<T>(Func<VelocitySample, T> some, T none)
+        => _value.HasValue ? some(_value.Value) : none;
+
+    public void Match(Action<VelocitySample> some, Action none)
+    {
+        if (_value.HasValue)
+            some(_value.Value);
+        else
+            none();
+    }
 }
 
 class Velocity
 {
     public static List<VelocitySample> ComputeVelocities(List<SnapshotDataEntry> entries)
     {
+        if(entries == null)
+            throw new ArgumentNullException(nameof(entries));
+
         var result = new List<VelocitySample>();
         if(entries.Count < 2)
             return result;
@@ -46,43 +78,45 @@ public class SmoothedVelocityAnalyzer
 
     public SmoothedVelocityAnalyzer(int windowSize = 5)
     {
-        _windowSize = Math.Max(2, windowSize); // need moar
+        if(windowSize < 2)
+            throw new ArgumentOutOfRangeException(nameof(windowSize), "Window size must be at least 2");
+
+        _windowSize = windowSize;
         _window = new Queue<SnapshotDataEntry>();
     }
 
-    public VelocitySample ProcessNext(SnapshotDataEntry entry)
+    public VelocityOption ProcessNext(SnapshotDataEntry entry)
     {
+        if(entry == null)
+            throw new ArgumentNullException(nameof(entry));
+
         _window.Enqueue(entry);
+
         if(_window.Count < 2)
-            return null; // not enuff BACK OFF !!
+            return VelocityOption.None;
 
         if(_window.Count > _windowSize)
             _window.Dequeue();
 
-        // compute average velocity over window
-        Vector3 deltaSum = Vector3.Zero;
-        double timeSum = 0.0;
-
+        // Compute smoothed velocity as total displacement / total time
+        // This properly weights by time for irregular sampling intervals
         var arr = _window.ToArray();
-        for(int i = 1; i < arr.Length; i++)
-        {
-            Vector3 delta = arr[i].Position - arr[i - 1].Position;
-            double dt = (arr[i].Time - arr[i - 1].Time).TotalSeconds;
-            if(dt <= 0)
-                dt = 1.0; // avoid div by zero
+        Vector3 totalDisplacement = arr[^1].Position - arr[0].Position;
+        double totalTime = (arr[^1].Time - arr[0].Time).TotalSeconds;
 
-            deltaSum += delta / (float)dt;
-            timeSum += dt;
-        }
+        if(totalTime <= 0)
+            totalTime = 1.0; // avoid div by zero
 
-        Vector3 smoothedVelocity = deltaSum / (arr.Length - 1); // average per-axis velocity
+        Vector3 smoothedVelocity = totalDisplacement / (float)totalTime;
         float speed = smoothedVelocity.Length();
 
-        return new VelocitySample
+        var sample = new VelocitySample
         {
             Vector = smoothedVelocity,
             Speed = speed,
             Time = entry.Time
         };
+
+        return VelocityOption.Some(sample);
     }
 }

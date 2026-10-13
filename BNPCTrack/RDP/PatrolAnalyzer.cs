@@ -13,6 +13,11 @@ public static class PatrolAnalyzer
 {
     public static List<int> FindSharpRotations(List<float> rotations, float threshold = 150f)
     {
+        if(rotations == null)
+            throw new ArgumentNullException(nameof(rotations));
+        if(threshold < 0 || threshold > 180)
+            throw new ArgumentOutOfRangeException(nameof(rotations), "Threshold must be between 0 and 180 degrees");
+
         List<int> reversalIndices = new List<int>();
         for(int i = 1; i < rotations.Count; i++)
         {
@@ -26,14 +31,25 @@ public static class PatrolAnalyzer
     // check if patrol loops or reverses/ping-pongs
     public static bool IsLoop(List<Vector3> points, float loopTolerance = 0.15f)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
         if(points.Count < 2)
             return false;
+        if(loopTolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(loopTolerance), "Loop tolerance must be non-negative");
+
         return Vector3.Distance(points[0], points[^1]) <= loopTolerance;
     }
     public static bool IsReverse(List<Vector3> points, float loopTolerance = 0.15f)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
         if(points.Count < 2)
             return false;
+        if(loopTolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(loopTolerance), "Loop tolerance must be non-negative");
+
+        // Use midpoint distance heuristic for efficiency
         int mid = points.Count / 2;
         for(int i = 0; i < mid; i++)
         {
@@ -47,6 +63,13 @@ public static class PatrolAnalyzer
 
     public static List<Vector3> TrimToFirstCycle(List<Vector3> points, float loopTolerance = 1.0f, int minLoopLength = 15)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(loopTolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(loopTolerance), "Loop tolerance must be non-negative");
+        if(minLoopLength < 1)
+            throw new ArgumentOutOfRangeException(nameof(minLoopLength), "Min loop length must be at least 1");
+
         if(points.Count < minLoopLength * 2)
             return points;
 
@@ -81,6 +104,13 @@ public static class PatrolAnalyzer
 
     public static List<Vector3> TrimToFullLoop(List<Vector3> points, float loopTolerance = 1f, int minLoopLength = 5)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(loopTolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(loopTolerance), "Loop tolerance must be non-negative");
+        if(minLoopLength < 1)
+            throw new ArgumentOutOfRangeException(nameof(minLoopLength), "Min loop length must be at least 1");
+
         if(points.Count < minLoopLength * 2)
             return points;
 
@@ -100,26 +130,34 @@ public static class PatrolAnalyzer
 
     public static List<Vector3> RotateStart(List<Vector3> points)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+
+        if(points.Count < 2)
+            return points;
+
+        // calc centroid of the loop
+        Vector3 centroid = Vector3.Zero;
+        foreach(var p in points)
+            centroid += p;
+        centroid /= points.Count;
+
+        // find the point closest to the centroid
+        // this gives a consistent starting point for the same patrol path
         int bestStartIndex = 0;
-        float minDistanceSum = float.MaxValue;
+        float minDistToCentroid = float.MaxValue;
 
         for(int i = 0; i < points.Count; i++)
         {
-            float distanceSum = 0f;
-            for(int j = 0; j < points.Count; j++)
+            float dist = Vector3.Distance(points[i], centroid);
+            if(dist < minDistToCentroid)
             {
-                Vector3 a = points[(i + j) % points.Count];
-                Vector3 b = points[(i + j + 1) % points.Count];
-                distanceSum += Vector3.Distance(a, b);
-            }
-
-            if(distanceSum < minDistanceSum)
-            {
-                minDistanceSum = distanceSum;
+                minDistToCentroid = dist;
                 bestStartIndex = i;
             }
         }
 
+        // rotate the list so the best starting point is first
         return points.Skip(bestStartIndex).Concat(points.Take(bestStartIndex)).ToList();
     }
 
@@ -133,6 +171,17 @@ public static class PatrolAnalyzer
         float extendThreshold = 0.85f,
         float minSegmentLength = 1f)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(windowSize < 1)
+            throw new ArgumentOutOfRangeException(nameof(windowSize), "Window size must be at least 1");
+        if(similarityThreshold < 0 || similarityThreshold > 1)
+            throw new ArgumentOutOfRangeException(nameof(similarityThreshold), "Similarity threshold must be between 0 and 1");
+        if(rotationWeight < 0 || rotationWeight > 1)
+            throw new ArgumentOutOfRangeException(nameof(rotationWeight), "Rotation weight must be between 0 and 1");
+        if(extendThreshold < 0 || extendThreshold > 1)
+            throw new ArgumentOutOfRangeException(nameof(extendThreshold), "Extend threshold must be between 0 and 1");
+
         if(points.Count < windowSize * 2)
             return points;
 
@@ -219,11 +268,16 @@ public static class PatrolAnalyzer
 
     public static List<List<Vector3>> SplitPathAtIndices(List<Vector3> points, List<int> splitIndices)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(splitIndices == null)
+            throw new ArgumentNullException(nameof(splitIndices));
+
         List<List<Vector3>> segments = new List<List<Vector3>>();
         int start = 0;
         foreach(int idx in splitIndices)
         {
-            if(idx > start)
+            if(idx > start && idx <= points.Count)
             {
                 segments.Add(points.GetRange(start, idx - start));
                 start = idx;
@@ -237,6 +291,17 @@ public static class PatrolAnalyzer
 
     public static List<PatrolSegment> AnalyzePath(List<Vector3> points, List<float> rotations, float rotationThreshold = 150f, float loopTolerance = 0.3f, int minLoopLength = 5)
     {
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(rotations == null)
+            throw new ArgumentNullException(nameof(rotations));
+        if(rotationThreshold < 0 || rotationThreshold > 180)
+            throw new ArgumentOutOfRangeException(nameof(rotationThreshold), "Rotation threshold must be between 0 and 180");
+        if(loopTolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(loopTolerance), "Loop tolerance must be non-negative");
+        if(minLoopLength < 1)
+            throw new ArgumentOutOfRangeException(nameof(minLoopLength), "Min loop length must be at least 1");
+
         List<int> sharpRotationIndices = FindSharpRotations(rotations, rotationThreshold);
         var rawSegments = SplitPathAtIndices(points, sharpRotationIndices);
 

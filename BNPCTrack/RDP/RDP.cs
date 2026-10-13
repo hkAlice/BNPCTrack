@@ -6,42 +6,63 @@ public static class RdpSimplifier
 {
     public static List<Vector3> Simplify(List<Vector3> points, float epsilon)
     {
-        if(points == null || points.Count < 3)
+        if(points == null)
+            throw new ArgumentNullException(nameof(points));
+        if(epsilon <= 0)
+            throw new ArgumentOutOfRangeException(nameof(epsilon), "Epsilon must be positive");
+
+        if(points.Count < 3)
             return new List<Vector3>(points);
 
-        var result = new List<Vector3>();
-        SimplifySection(points, 0, points.Count - 1, epsilon, result);
-        result.Add(points[points.Count - 1]); // ensure last point
-        return result;
-    }
+        // Use a bit array to mark which points to keep
+        var keep = new bool[points.Count];
+        keep[0] = true;                    // always keep first point
+        keep[points.Count - 1] = true;     // always keep last point
 
-    private static void SimplifySection(List<Vector3> points, int start, int end, float epsilon, List<Vector3> result)
-    {
-        float maxDistance = 0;
-        int index = -1;
+        // Use explicit stack instead of recursion to avoid stack overflow
+        var stack = new Stack<(int start, int end)>();
+        stack.Push((0, points.Count - 1));
 
-        for(int i = start + 1; i < end; i++)
+        while(stack.Count > 0)
         {
-            float dist = PerpendicularDistance(points[i], points[start], points[end]);
-            if(dist > maxDistance)
+            var (start, end) = stack.Pop();
+
+            float maxDistance = 0;
+            int index = -1;
+
+            for(int i = start + 1; i < end; i++)
             {
-                index = i;
-                maxDistance = dist;
+                float dist = PerpendicularDistance(points[i], points[start], points[end]);
+                if(dist > maxDistance)
+                {
+                    index = i;
+                    maxDistance = dist;
+                }
+            }
+
+            if(maxDistance > epsilon)
+            {
+                // Mark the furthest point to keep
+                keep[index] = true;
+
+                // Process both segments
+                stack.Push((index, end));
+                stack.Push((start, index));
             }
         }
 
-        if(maxDistance > epsilon)
+        // build result from marked points, preserving order
+        var result = new List<Vector3>();
+        for(int i = 0; i < points.Count; i++)
         {
-            SimplifySection(points, start, index, epsilon, result);
-            SimplifySection(points, index, end, epsilon, result);
+            if(keep[i])
+                result.Add(points[i]);
         }
-        else
-        {
-            result.Add(points[start]);
-        }
+
+        return result;
     }
 
-    private static float PerpendicularDistance(Vector3 point, Vector3 lineStart, Vector3 lineEnd)
+    public static float PerpendicularDistance(Vector3 point, Vector3 lineStart, Vector3 lineEnd)
     {
         if(lineStart == lineEnd)
             return Vector3.Distance(point, lineStart);
